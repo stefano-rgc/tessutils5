@@ -1,6 +1,9 @@
 #!/usr/bin/env python
+import re
+from types import SimpleNamespace
 import signal, functools, warnings, time, pickle
 from pathlib import Path
+from webbrowser import get
 import numpy as np
 import pandas as pd
 import lightkurve as lk 
@@ -163,8 +166,8 @@ def check_aperture_mask(aperture, prepend_err_msg=''):
     '''
 
     # Parameters / Criteria
-    max_elongation = 14 # pix
-    min_pixels = 4 # pix
+    max_elongation = 14 # pix # ! Parameter
+    min_pixels = 4 # pix # ! Parameter
 
     # Initializations
     err_msg = ''
@@ -178,7 +181,7 @@ def check_aperture_mask(aperture, prepend_err_msg=''):
         err_msg = print_err('Not aperture found.', prepend=prepend_err_msg)
         OK_aperture = False
 
-    # If too large aperture
+    # If too large aperture # ? Reintroduce ?
     # if False:
     #     if not np.sum(aperture.astype(int)) < 9*9:
     #         return False
@@ -323,8 +326,8 @@ def contamination(results,image,aperture,target_coord_pixel,target_tmag,nb_coord
 
     # Set a maximum of 40 neighbour stars to fit
     if nb_tmags.size > 0:
-        nb_tmags = nb_tmags[:40]
-        nb_coords_pixel = nb_coords_pixel[:40,:]
+        nb_tmags = nb_tmags[:40] # ! Parameter
+        nb_coords_pixel = nb_coords_pixel[:40,:] # ! Parameter
 
     # Gaussian locations
     locations = np.array([*target_coord_pixel,*nb_coords_pixel])
@@ -407,6 +410,7 @@ def contamination(results,image,aperture,target_coord_pixel,target_tmag,nb_coord
     cos = np.dot(v1,v2)
     tan = np.sqrt(1-cos**2)/cos
     bkg_change = xsize*tan
+    # TODO: Check if try statement is needed
     try:
         fraction_bkg_change = bkg_change/Plane(xsize/2,ysize/2)[0]
     except TypeError:
@@ -429,8 +433,9 @@ def contamination(results,image,aperture,target_coord_pixel,target_tmag,nb_coord
                 Gaussian.amplitude.tied = None
                 Gaussian.x_stddev.tied = None
                 Gaussian.y_stddev.tied = None
-        except Exception:
-            print('######################################')
+        except Exception as e:
+            e_name = type(e).__name__
+            print(f'Unknwon error. Exception -> {e_name}: {e}.')
             embed()
     
     elif nGaussians == 2:
@@ -438,20 +443,38 @@ def contamination(results,image,aperture,target_coord_pixel,target_tmag,nb_coord
         Neighbours.x_stddev.tied = None
         Neighbours.y_stddev.tied = None
     
-    # Store to results
-    results['fit'] = {'fitted_image':fitted_image,\
-                      'intercept':Plane.intercept.value,\
-                      'Plane':Plane,\
-                      'TargetStar':TargetStar,\
-                      'Neighbours':Neighbours,\
-                      'slope_y':Plane.slope_y.value,\
-                      'slope_x':Plane.slope_x.value,\
-                      'neighbour_flux_ap':neighbour_flux,\
-                      'target_flux_ap':target_flux,\
-                      'bkg_flux_ap':bkg_flux,\
-                      'fraction_contamination_ap':fraction_ap_contamination,\
-                      'fraction_bkg_change':fraction_bkg_change}
+    # # Store to results
+    # results['fit'] = {'fitted_image':fitted_image,\
+    #                   'intercept':Plane.intercept.value,\
+    #                   'Plane':Plane,\
+    #                   'TargetStar':TargetStar,\
+    #                   'Neighbours':Neighbours,\
+    #                   'slope_y':Plane.slope_y.value,\
+    #                   'slope_x':Plane.slope_x.value,\
+    #                   'neighbour_flux_ap':neighbour_flux,\
+    #                   'target_flux_ap':target_flux,\
+    #                   'bkg_flux_ap':bkg_flux,\
+    #                   'fraction_contamination_ap':fraction_ap_contamination,\
+    #                   'fraction_bkg_change':fraction_bkg_change}
     
+    # Store to results
+    results.fit = SimpleNamespace(fitted_image=fitted_image,
+                                #   intercept=Plane.intercept.value,\
+                                #   Fit=Fit, # Function
+                                  Plane=Plane, # Function
+                                  TargetStar=TargetStar, # Function
+                                  Neighbours=Neighbours, # Function
+                                  xPixel=x, # Pixel coordinates
+                                  yPixel=y, # Pixel coordinates
+                                #   slope_y=Plane.slope_y.value,\
+                                #   slope_x=Plane.slope_x.value,\
+                                  neighbour_flux_ap=neighbour_flux,
+                                  target_flux_ap=target_flux,
+                                  bkg_flux_ap=bkg_flux,
+                                  fraction_contamination_ap=fraction_ap_contamination,
+                                  fraction_bkg_change=fraction_bkg_change)
+    
+
     return fitted_image, err_msg
 
 def refine_aperture(results,tic,ra,dec,wcs,aperture,threshold,image,prepend_err_msg=''):
@@ -462,9 +485,9 @@ def refine_aperture(results,tic,ra,dec,wcs,aperture,threshold,image,prepend_err_
     '''
 
     # Parameters / Criteria
-    thresholds = iter([7.5, 10, 15, 20, 30, 40, 50])
-    arcsec_per_pixel = 21 * u.arcsec # TESS CCD
-    nb_mags_below_target = 4
+    thresholds = iter([7.5, 10, 15, 20, 30, 40, 50]) # ! Parameter
+    arcsec_per_pixel = 21 * u.arcsec # TESS CCD # ! Parameter
+    nb_mags_below_target = 4 # ! Parameter
 
     # Initialization
     err_msg = ''
@@ -478,17 +501,18 @@ def refine_aperture(results,tic,ra,dec,wcs,aperture,threshold,image,prepend_err_
     nb_coords, nb_tmags = query_TIC(f'TIC {tic}',target_coord, search_radius=search_radius, tic_id=tic)
 
     # Check we retrieve the correct target
-    if tic != str(tic_tmp):
+    if tic != tic_tmp:
         err_msg = print_err('The TIC number from the MAST query does not match the one from the TESS FITS image.', prepend=prepend_err_msg)
+        print(err_msg)
         return None, None, None, None, None, err_msg
         
     # Make neighbor coordenates into NumPy arrays
     nb_coords = np.array(nb_coords)
 
     # Store to results (get plain numbers from the AstroPy instance)
-    results['neighbours_all'] = {'mag':nb_tmags,\
-                                 'ra' :np.array([coord.ra.deg  for coord in nb_coords]),\
-                                 'dec':np.array([coord.dec.deg for coord in nb_coords])}
+    results.neighbours_all = SimpleNamespace(mag=nb_tmags,\
+                                             ra=np.array([coord.ra.deg  for coord in nb_coords]),\
+                                             dec=np.array([coord.dec.deg for coord in nb_coords]))
 
     # Filter neighbour stars: Remove too faint stars
     nb_faintest_mag = target_tmag + nb_mags_below_target
@@ -500,10 +524,10 @@ def refine_aperture(results,tic,ra,dec,wcs,aperture,threshold,image,prepend_err_
     target_coord_pixel = np.array( [target_coord.to_pixel(wcs,origin=0)] )
 
     # Store to results (get plain numbers from the AstroPy instance)
-    results['target'] = {'mag':target_tmag,\
-                         'ra' :target_coord.ra.deg,\
-                         'dec':target_coord.dec.deg,\
-                         'pix':target_coord_pixel}
+    results.target = SimpleNamespace(mag=target_tmag,\
+                                     ra=target_coord.ra.deg,\
+                                     dec=target_coord.dec.deg,\
+                                     pix=target_coord_pixel)
 
     if nb_coords.size > 0:
         nb_coords_pixel = np.array( [coord.to_pixel(wcs,origin=0) for coord in nb_coords], dtype=float)
@@ -518,10 +542,10 @@ def refine_aperture(results,tic,ra,dec,wcs,aperture,threshold,image,prepend_err_
         nb_coords_pixel = np.array([])
 
     # Store to results (get plain numbers from the AstroPy instance)
-    results['neighbours_used'] = {'mag':nb_tmags,\
-                                  'ra' :np.array([coord.ra.deg  for coord in nb_coords]),\
-                                  'dec':np.array([coord.dec.deg for coord in nb_coords]),\
-                                  'pix':nb_coords_pixel}
+    results.neighbours_used = SimpleNamespace(mag=nb_tmags,\
+                                              ra=np.array([coord.ra.deg  for coord in nb_coords]),\
+                                              dec=np.array([coord.dec.deg for coord in nb_coords]),\
+                                              pix=nb_coords_pixel)
 
     if nb_coords.size > 0:
         
@@ -545,17 +569,17 @@ def refine_aperture(results,tic,ra,dec,wcs,aperture,threshold,image,prepend_err_
                 except StopIteration:
                     # If no more thresholds to try, set the aperture to `None`
                     err_msg = print_err('Not isolated target star.', prepend=prepend_err_msg)
-                    results['masks']['aperture'] = None
+                    results.masks.aperture = None
                     return None, target_coord_pixel, target_tmag, nb_coords_pixel, nb_tmags, err_msg
 
                 if np.sum(aperture.astype(int)) == 0:
                     # If no aperture left, set the aperture to `None`
                     err_msg = print_err('Not isolated target star.', prepend=prepend_err_msg)
-                    results['masks']['aperture'] = None
+                    results.masks.aperture = None
                     return None, target_coord_pixel, target_tmag, nb_coords_pixel, nb_tmags, err_msg
 
     # Store to results
-    results['aperture_threshold'] = threshold
+    results.aperture_threshold = threshold
     
     # Find the brightest pixel within the mask
     ap_image = np.ma.masked_where(~aperture, image)
@@ -570,15 +594,16 @@ def refine_aperture(results,tic,ra,dec,wcs,aperture,threshold,image,prepend_err_
                    [target_coords_pixel_binned[:,1], target_coords_pixel_binned[:,0]], order=0)
     if overlaps.sum() == 0:
         err_msg = print_err('Target star not within the mask.', prepend=prepend_err_msg)
-        results['masks']['aperture'] = None
+        print(err_msg)
+        results.masks.aperture = None
         return None, target_coord_pixel, target_tmag, nb_coords_pixel, nb_tmags, err_msg
 
     # Store to results
-    results['masks']['aperture'] = aperture
+    results.masks.aperture = aperture
 
     return aperture, target_coord_pixel, target_tmag, nb_coords_pixel, nb_tmags, err_msg
 
-def exclude_interval(tpf,sector,results):
+def exclude_interval(tpf,sector,results): # ! Parameters !
     '''
     Purpose:
         Remove cadences of the LightKurve target pixel file (tpf) based on time ranges (in days)
@@ -631,19 +656,15 @@ def exclude_interval(tpf,sector,results):
     for interval in intervals:
         # Find the indices of the quality mask that created tpf.time
         ind = np.argwhere(tpf.quality_mask == True)
-        try:
-            mask  = tpf.time > interval[0]
-            mask &= tpf.time < interval[1]
-        except TypeError:
-            mask  = tpf.time.value > interval[0]
-            mask &= tpf.time.value < interval[1]
+        mask  = tpf.time.value > interval[0]
+        mask &= tpf.time.value < interval[1]
         # Set to False the indices to be masked (ignored).
         # Note that we take a subset from `ind` because the masks where defined from tpf.time
         tpf.quality_mask[ind[mask]] = False
 
     # Store to results
     intervals = np.array(intervals)
-    results['excluded_intervals'] = intervals
+    results.excluded_intervals = intervals
 
 def find_number_of_PCs(results,regressors,lc):
     '''
@@ -652,9 +673,9 @@ def find_number_of_PCs(results,regressors,lc):
     '''
 
     # Parameters / Criteria
-    npc = 7
-    nbins = 40 # number of bins to divide the each PC
-    threshold_variance = 1e-4 # 5 # -> 500% # THIS IS NOT USED.
+    npc = 7 # ! Parameter
+    nbins = 40 # number of bins to divide the each PC # ! Parameter
+    threshold_variance = 1e-4 # 5 # -> 500% # THIS IS NOT USED. # ! Parameter
 
     dm = lk.DesignMatrix(regressors, name='regressors').pca(npc).append_constant()
     rc = lk.RegressionCorrector(lc)
@@ -679,15 +700,15 @@ def find_number_of_PCs(results,regressors,lc):
         new_npc = npc
 
     # Store to results
-    results['pca_all'] = {'coef':rc.coefficients,\
-                          'pc':[dm.values[:,i] for i in range(dm.rank)],\
-                          'dm':dm,\
-                          'rc':rc,\
-                          'npc':npc,\
-                          'npc_used':new_npc,\
-                          'pc_variances':pcs_variances,\
-                          'threshold_variance':threshold_variance,\
-                          'nbins':nbins}
+    results.pca_all = SimpleNamespace(coef=rc.coefficients,
+                                      pc=[dm.values[:,i] for i in range(dm.rank)],
+                                      dm=dm,
+                                      rc=rc,
+                                      npc=npc,
+                                      npc_used=new_npc,
+                                      pc_variances=pcs_variances,
+                                      threshold_variance=threshold_variance,
+                                      nbins=nbins)
 
     return new_npc, dm, rc
 
@@ -697,77 +718,124 @@ def print_err(err_msg, prepend=''):
     print(err_msg)
     return err_msg
 
+################################################################################
+# Utility functions
+################################################################################
+
+def get_header_info(fitsFile):
+
+    # Save header information from original FITS file
+    hdulist = []
+    ext = 0
+    while True:
+        try:
+            hdulist.append( fits.getheader(fitsFile, ext=ext) )
+            ext += 1
+        # No more extentions in header
+        except IndexError:
+            break
+        # Unknown error
+        except Exception as e:
+            e_name = e.__class__.__name__
+            print(f'Unexpected exception when reading headers from FITS file. Exception: -> {e_name}: {e}.')
+            break
+    
+    return hdulist
+
+
 ################################################################
 ### Main function to extract light curves from the TESS images
 ################################################################
 
-def extract_light_curve(fits_filename,outputdir,return_msg=True):
+def extract_light_curve(fitsFile,outputdir,return_msg=True):
 
     # Output name
     if not outputdir.exists():
         outputdir.mkdir(parents=True)
-    output = Path(fits_filename.stem+'_corrected.pickled')
+    output = Path(fitsFile.stem+'_corrected.pickled')
     output = outputdir/output
 
     # Parameters and  Criteria:
     sigma_clipping = 5 # To be applied after the detrending of the light curve
 
+    # # Structure the data to be saved
+    # results = {'tic':                    None,
+    #            'sector':                 None,
+    #            'ra':                     None,
+    #            'dec':                    None,
+    #            'headers':                None,  # Headers from the original FITS file
+    #            'fit':                    None,  # Result from fit
+    #            'neighbours_all':         None,  # All neighbours stars info
+    #            'neighbours_used':        None,  # Used neighbours stars info
+    #            'target':                 None,  # Target star info
+    #            'aperture_threshold':     None,  # HDU to store tabular information
+    #            'pca_all':                None,  # PCA results
+    #            'pca_used':               None,  # PCA results
+    #            'centroids':              None,  # Centroids results
+    #            'excluded_intervals':     None,  # Excluded intervals in days
+    #            'lc_raw':                 None,  # Light curves
+    #            'lc_raw_nonan':           None,  # Light curves
+    #            'lc_trend':               None,  # Light curves
+    #            'lc_regressed':           None,  # Light curves
+    #            'lc_regressed_notoutlier':None,  # Light curves
+    #            'median_image':           None,  
+    #            'masks':                  None,
+    #            'tag':                    None}  
+    
     # Structure the data to be saved
-    results = {'tic':                    None,
-               'sector':                 None,
-               'ra':                     None,
-               'dec':                    None,
-               'headers':                None,  # Headers from the original FITS file
-               'fit':                    None,  # Result from fit
-               'neighbours_all':         None,  # All neighbours stars info
-               'neighbours_used':        None,  # Used neighbours stars info
-               'target':                 None,  # Target star info
-               'aperture_threshold':     None,  # HDU to store tabular information
-               'pca_all':                None,  # PCA results
-               'pca_used':               None,  # PCA results
-               'centroids':              None,  # Centroids results
-               'excluded_intervals':     None,  # Excluded intervals in days
-               'lc_raw':                 None,  # Light curves
-               'lc_raw_nonan':           None,  # Light curves
-               'lc_trend':               None,  # Light curves
-               'lc_regressed':           None,  # Light curves
-               'lc_regressed_notoutlier':None,  # Light curves
-               'median_image':           None,  
-               'masks':                  None,
-               'tag':                    None}  
+    results = SimpleNamespace()
+    results.tic = None
+    results.sector = None
+    results.ra = None
+    results.dec = None
+    results.headers = None
+    results.fit = None
+    results.neighbours_all = None
+    results.neighbours_used = None
+    results.target = None
+    results.aperture_threshold = None
+    results.pca_all = None
+    results.pca_used = None
+    results.centroids = None
+    results.excluded_intervals = None
+    results.lc_raw = None
+    results.lc_raw_nonan = None
+    results.lc_trend = None
+    results.lc_regressed = None
+    results.lc_regressed_notoutlier = None
+    results.median_image = None
+    results.masks = None
+    results.tag = None
 
-    # Save information from header from original FITS file
-    HDUL, ext = [], 0
-    while True:
-        try:
-            HDUL.append( fits.getheader(fits_filename.as_posix(), ext=ext).tostring() )
-            ext += 1
-        except IndexError:
-            break
-        except Exception as e:
-            print('Unexpected exception when reading headers from FITS: ', e)
-            break
-    results['headers'] = HDUL
+
+    # Save headers from original FITS file
+    results.headers = get_header_info(fitsFile)
 
     # Load the TESS taret pixel file
     try:
-        tpf = lk.TessTargetPixelFile(fits_filename.as_posix())
+        tpf = lk.TessTargetPixelFile(fitsFile)
     except Exception as e:
         # Save results
-        err_msg = f'"lightkurve.TessTargetPixelFile()" could not open file {fits_filename.as_posix()}. Exception: {e}'
-        results['tag'] = err_msg
-        picklefile = open(output.as_posix(), 'wb')
-        pickle.dump(results, picklefile)
-        picklefile.close()
-        if return_msg: return err_msg
+        e_name = e.__class__.__name__
+        err_msg = f'"lightkurve.TessTargetPixelFile()" could not open file {fitsFile}. Exception: -> {e_name}: {e}.'
+        print(err_msg)
+        results.tag = err_msg
+        with open(output,'wb') as f:
+            pickle.dump(results,f)
+        if return_msg:
+            return err_msg
         return
-    tic = str( tpf.get_keyword('ticid') )
-    sector = str( tpf.get_keyword('sector') )
-    target_ra = np.float( tpf.ra )
-    target_dec = np.float( tpf.dec )
+    
+    tic = tpf.get_keyword('ticid')
+    sector = tpf.get_keyword('sector')
+    target_ra = tpf.ra 
+    target_dec = tpf.dec
+    
     # Store to results
-    results['tic'], results['sector'] = tic, sector
-    results['ra'], results['dec'] = target_ra, target_dec
+    results.tic = tic
+    results.sector = sector
+    results.ra = target_ra
+    results.dec = target_dec
 
     # Initialize messages
     id_msg = f'TIC {tic} Sector {sector}: Skipped: '
@@ -779,13 +847,15 @@ def extract_light_curve(fits_filename,outputdir,return_msg=True):
         median_image = np.nanmedian(tpf.flux, axis=0)
         try:
             median_image = median_image.value
-        except Exception:
-            pass
+        except Exception as e:
+            e_name = e.__class__.__name__
+            print(f'Unexpected exception when computing the median image for the TPF. Exception: -> {e_name}: {e}.')
         # Store to results
-        results['median_image'] = median_image
+        results.median_image = median_image
 
     # Estimate of aperture mask and background mask
-    ap_mask_threshold, bkg_mask_threshold = 5, 3
+    ap_mask_threshold = 5
+    bkg_mask_threshold = 3
     ap_mask =   threshold_mask(median_image, threshold=ap_mask_threshold, reference_pixel='center')
     ap_bkg  = ~ threshold_mask(median_image, threshold=bkg_mask_threshold, reference_pixel=None)
     # Exclude NaN values outside the camera
@@ -793,19 +863,18 @@ def extract_light_curve(fits_filename,outputdir,return_msg=True):
     # Estimate the median flux background
     median_bkg_flux = np.median(median_image[ap_bkg])
     # Store to results
-    results['masks'] = {'aperture':ap_mask,\
-                        'background':ap_bkg}
+    results.masks = SimpleNamespace(aperture=ap_mask, background=ap_bkg)
     
     # Check validity of aperture mask
     OK_ap_mask, err_msg = check_aperture_mask(ap_mask, id_msg)
     # If aperture is not good, exit program with corresponding message
     if not OK_ap_mask:
         # Save results
-        results['tag'] = err_msg
-        picklefile = open(output.as_posix(), 'wb')
-        pickle.dump(results, picklefile)
-        picklefile.close()
-        if return_msg: return err_msg
+        results.tag = err_msg
+        with open(output,'wb') as f:
+            pickle.dump(results,f)
+        if return_msg:
+            return err_msg
         return
    
     # Refine aperture
@@ -814,12 +883,14 @@ def extract_light_curve(fits_filename,outputdir,return_msg=True):
     except IndexError:
         # Save results
         err_msg = id_msg+'No WCS info in header'
-        results['tag'] = err_msg
-        picklefile = open(output.as_posix(), 'wb')
-        pickle.dump(results, picklefile)
-        picklefile.close()
-        if return_msg: return err_msg
+        print(err_msg)
+        results.tag = err_msg
+        with open(output,'wb') as f:
+            pickle.dump(results,f)
+        if return_msg:
+            return err_msg
         return
+    
     ap_mask,\
     target_coord_pixel, target_tmag,\
     nb_coords_pixel, nb_tmags,\
@@ -828,34 +899,25 @@ def extract_light_curve(fits_filename,outputdir,return_msg=True):
     # If not satisfactory aperture mask
     if ap_mask is None:
         # Save results
-        results['tag'] = err_msg
-        picklefile = open(output.as_posix(), 'wb')
-        pickle.dump(results, picklefile)
-        picklefile.close()
-        if return_msg: return err_msg
+        results.tag = err_msg
+        with open(output,'wb') as f:
+            pickle.dump(results,f)
+        if return_msg:
+            return err_msg
         return
 
     # Variation in time of aperture's center of mass
     centroid_col, centroid_row = tpf.estimate_centroids(aperture_mask=ap_mask, method='quadratic')
-    try:
-        centroid_col = centroid_col.value
-        centroid_row = centroid_row.value
-    except Exception:
-        pass
+    centroid_col = centroid_col.value
+    centroid_row = centroid_row.value
     centroid_col -= tpf.column
     centroid_row -= tpf.row
     sqrt_col2_row2 = np.sqrt(centroid_col**2+centroid_row**2)
     # Store to results
-    try:
-        results['centroids'] = {'col':centroid_col,\
-                                'row':centroid_row,\
-                                'sqrt_col2_row2':sqrt_col2_row2,\
-                                'time':tpf.time.value}
-    except AttributeError:
-        results['centroids'] = {'col':centroid_col,\
-                                'row':centroid_row,\
-                                'sqrt_col2_row2':sqrt_col2_row2,\
-                                'time':tpf.time}
+    results.centroids = SimpleNamespace(col=centroid_col,
+                                        row=centroid_row,
+                                        sqrt_col2_row2=sqrt_col2_row2,
+                                        time=tpf.time.value)
 
     # Fit the image and find the contamination fraction within the aperture mask
     fitted_image, err_msg = contamination(results, median_image,ap_mask,\
@@ -865,27 +927,28 @@ def extract_light_curve(fits_filename,outputdir,return_msg=True):
                                  prepend_err_msg=id_msg)
     if fitted_image is None:
         # Save results
-        results['tag'] = err_msg
-        picklefile = open(output.as_posix(), 'wb')
-        pickle.dump(results, picklefile)
-        picklefile.close()
-        if return_msg: return err_msg
+        results.tag = err_msg
+        with open(output,'wb') as f:
+            pickle.dump(results,f)
+        if return_msg:
+            return err_msg
         return
 
     # Generate the raw light curve
     lc_raw = tpf.to_lightcurve(aperture_mask=ap_mask, method='aperture')
     # Store to results
-    try:
-        results['lc_raw'] = {'flux':lc_raw.flux.value,\
-                            'time':lc_raw.time.value}
-    except AttributeError:
-        results['lc_raw'] = {'flux':lc_raw.flux,\
-                            'time':lc_raw.time}
+    results.lc_raw = lc_raw
+    # results['lc_raw'] = lc_raw
+    # Store to results
+    # results['lc_raw'] = {'flux':lc_raw.flux.value,\
+    #                     'time':lc_raw.time.value}
+
+
     # Find the indices of the quality mask that created the light curve
     ind = np.argwhere(tpf.quality_mask == True)
     # Masks with True value the light curve times with null or NaN flux
-    mask  = lc_raw.flux == 0
-    mask |= lc_raw.flux == np.nan
+    mask  = lc_raw.flux.value == 0
+    mask |= lc_raw.flux.value == np.nan
     # Set to False the indices to be masked (ignored).
     # Note that we take a subset from `ind` because the masks where defined from the light curve
     tpf.quality_mask[ind[mask]] = False
@@ -896,12 +959,9 @@ def extract_light_curve(fits_filename,outputdir,return_msg=True):
     # Generate the light curve
     lc = tpf.to_lightcurve(aperture_mask=ap_mask, method='aperture')
     # Store to results
-    try:
-        results['lc_raw_nonan'] = {'flux':lc.flux.value,\
-                                   'time':lc.time.value}
-    except AttributeError:
-        results['lc_raw_nonan'] = {'flux':lc.flux,\
-                                   'time':lc.time}
+    results.lc_raw_nonan = lc
+    # results['lc_raw_nonan'] = {'flux':lc.flux.value,\
+    #                             'time':lc.time.value}
             
     # Make a design matrix and pass it to a linear regression corrector
     regressors = tpf.flux[:, ap_bkg]
@@ -911,11 +971,11 @@ def extract_light_curve(fits_filename,outputdir,return_msg=True):
 
     if npc == 0:
         # Save results
-        results['tag'] = id_msg+'None PC used, no detrended done.'
-        picklefile = open(output.as_posix(), 'wb')
-        pickle.dump(results, picklefile)
-        picklefile.close()
-        if return_msg: return err_msg
+        results.tag = id_msg+'None PC used, no detrended done.'
+        with open(output,'wb') as f:
+            pickle.dump(results,f)
+        if return_msg:
+            return err_msg
         return
 
     try:
@@ -926,48 +986,49 @@ def extract_light_curve(fits_filename,outputdir,return_msg=True):
         lc_trend = rc.diagnostic_lightcurves['regressors']
 
         # Sigma clipping the remove outliers
-        lc_regressed_no_outliers, lc_mask_regressed_outliers = lc_regressed.remove_outliers(return_mask=True, sigma=sigma_clipping)
+        lc_regressed_no_outliers, lc_mask_regressed_outliers = lc_regressed.remove_outliers(return_mask=True, sigma=sigma_clipping) # ! Parameter
 
         # Store to results
-        try:
-            results['lc_trend']                = {'flux':lc_trend.flux.value,\
-                                                'time':lc_trend.time.value}
-            results['lc_regressed']            = {'flux':lc_regressed.flux.value,\
-                                                'time':lc_regressed.time.value,\
-                                                'outlier_mask':lc_mask_regressed_outliers,\
-                                                'sigma_clipping':sigma_clipping}
-            results['lc_regressed_notoutlier'] = {'flux':lc_regressed_no_outliers.flux.value,\
-                                                'time':lc_regressed_no_outliers.time.value}
-        except AttributeError:
-            results['lc_trend']                = {'flux':lc_trend.flux,\
-                                                  'time':lc_trend.time}
-            results['lc_regressed']            = {'flux':lc_regressed.flux,\
-                                                'time':lc_regressed.time,\
-                                                'outlier_mask':lc_mask_regressed_outliers,\
-                                                'sigma_clipping':sigma_clipping}
-            results['lc_regressed_notoutlier'] = {'flux':lc_regressed_no_outliers.flux,\
-                                                'time':lc_regressed_no_outliers.time}
-        
-        results['pca_used']                = {'coef':rc.coefficients,\
-                                              'pc':[dm.values[:,i] for i in range(dm.rank)],\
-                                              'dm':dm,\
-                                              'rc':rc,\
-                                              'npc':npc}
+        results.lc_trend = lc_trend
+        results.lc_regressed = SimpleNamespace(lc=lc_regressed,         
+                                               outlier_mask=lc_mask_regressed_outliers,
+                                               sigma_clipping=sigma_clipping)
+        results.lc_regressed_notoutlier = lc_regressed_no_outliers
+        results.pca_used = SimpleNamespace(coef=rc.coefficients,
+                                           pc=[dm.values[:,i] for i in range(dm.rank)],
+                                           dm=dm,
+                                           rc=rc,
+                                           npc=npc)
+        # results['lc_trend']                = {'flux':lc_trend.flux.value,\
+        #                                     'time':lc_trend.time.value}
+        # results['lc_regressed']            = {'flux':lc_regressed.flux.value,\
+        #                                     'time':lc_regressed.time.value,\
+        #                                     'outlier_mask':lc_mask_regressed_outliers,\
+        #                                     'sigma_clipping':sigma_clipping}
+        # results['lc_regressed_notoutlier'] = {'flux':lc_regressed_no_outliers.flux.value,\
+        #                                     'time':lc_regressed_no_outliers.time.value}
+        # results['pca_used']                = {'coef':rc.coefficients,\
+        #                                       'pc':[dm.values[:,i] for i in range(dm.rank)],\
+        #                                       'dm':dm,\
+        #                                       'rc':rc,\
+        #                                       'npc':npc}
 
         # Save results
-        results['tag'] = 'OK'
-        picklefile = open(output.as_posix(), 'wb')
-        pickle.dump(results, picklefile)
-        picklefile.close()
-        if return_msg: return OK_msg
+        results.tag = 'OK'
+        with open(output,'wb') as f:
+            pickle.dump(results,f)
+        if return_msg:
+            return OK_msg
         return
         
     except Exception as e:
+        e_name = type(e).__name__
         print('!!!!!!!!!!!!!!!!!!!!!!!!!')
         print(f'   Sector {sector}.')
-        print('EXCEPTION:', e)
+        print(f'Unexpected EXCEPTION -> {e_name}: {e}.')
         print('!!!!!!!!!!!!!!!!!!!!!!!!!')
-        if return_msg: return id_msg+'::'+repr(e)+'::'+str(e)
+        if return_msg:
+            return id_msg+'::'+repr(e)+'::'+str(e)
         return
 
 if __name__ == '__main__':
@@ -978,10 +1039,10 @@ if __name__ == '__main__':
 
     
     # RUN 1: Get light curves for all TPFs in the folder `tpfs` and store results in `processed`
-    # outputdir = Path('processed')
-    # fitsfile = Path('tess139369511_sec3.fits')
-    # msg = extract_light_curve(fitsfile,outputdir)
-    # print(msg)
+    outputdir = Path('processed')
+    fitsfile = Path('tpfs/tess374944608_sec9.fits')
+    msg = extract_light_curve(fitsfile,outputdir)
+    print(msg)
 
     # RUN 2: Same as RUN 1 but skip .fits files with the characters "corrected" in its filename
     # outputdir = Path('processed')
@@ -992,26 +1053,26 @@ if __name__ == '__main__':
     #         print(msg)
 
 
-    # RUN 3: PARALLEL run
-    outputdir = Path('../processed1')
-    fitsfile = Path('../tpfs1')
+    # # RUN 3: PARALLEL run
+    # outputdir = Path('../processed')
+    # fitsfile = Path('../tpfs')
         
-    # Find all files that have not been processed
-    inputfiles = [ f for f in fitsfile.glob('*fits') ]
-    donefiles  = [ f.name for f in outputdir.glob('tess*_corrected.pickled') ]
-    inputfiles = [ f for f in inputfiles if f.name.replace('.fits','_corrected.pickled') not in donefiles ]
+    # # Find all files that have not been processed
+    # inputfiles = [ f for f in fitsfile.glob('*fits') ]
+    # donefiles  = [ f.name for f in outputdir.glob('tess*_corrected.pickled') ]
+    # inputfiles = [ f for f in inputfiles if f.name.replace('.fits','_corrected.pickled') not in donefiles ]
     
-    num_cores = 3
+    # num_cores = 3
 
-    # Time execution
-    time1 = time.perf_counter()
-    msgs = Parallel(n_jobs=num_cores)(delayed(extract_light_curve)(file,outputdir) for file in inputfiles)
-    time2 = time.perf_counter()
+    # # Time execution
+    # time1 = time.perf_counter()
+    # msgs = Parallel(n_jobs=num_cores)(delayed(extract_light_curve)(file,outputdir) for file in inputfiles)
+    # time2 = time.perf_counter()
 
-    # Write the log
-    outputfile = outputdir/Path('output.txt')
-    outputfile.touch()
-    with open(outputfile.as_posix(), 'w') as f: 
-        for msg in msgs: 
-            f.write(msg+'\n\n\n') 
-        f.write(f'seconds: {time2-time1}')
+    # # Write the log
+    # outputfile = outputdir/Path('output.txt')
+    # outputfile.touch()
+    # with open(outputfile.as_posix(), 'w') as f: 
+    #     for msg in msgs: 
+    #         f.write(msg+'\n\n\n') 
+    #     f.write(f'seconds: {time2-time1}')
