@@ -443,31 +443,13 @@ def contamination(results,image,aperture,target_coord_pixel,target_tmag,nb_coord
         Neighbours.x_stddev.tied = None
         Neighbours.y_stddev.tied = None
     
-    # # Store to results
-    # results['fit'] = {'fitted_image':fitted_image,\
-    #                   'intercept':Plane.intercept.value,\
-    #                   'Plane':Plane,\
-    #                   'TargetStar':TargetStar,\
-    #                   'Neighbours':Neighbours,\
-    #                   'slope_y':Plane.slope_y.value,\
-    #                   'slope_x':Plane.slope_x.value,\
-    #                   'neighbour_flux_ap':neighbour_flux,\
-    #                   'target_flux_ap':target_flux,\
-    #                   'bkg_flux_ap':bkg_flux,\
-    #                   'fraction_contamination_ap':fraction_ap_contamination,\
-    #                   'fraction_bkg_change':fraction_bkg_change}
-    
     # Store to results
     results.fit = SimpleNamespace(fitted_image=fitted_image,
-                                #   intercept=Plane.intercept.value,\
-                                #   Fit=Fit, # Function
                                   Plane=Plane, # Function
                                   TargetStar=TargetStar, # Function
                                   Neighbours=Neighbours, # Function
                                   xPixel=x, # Pixel coordinates
                                   yPixel=y, # Pixel coordinates
-                                #   slope_y=Plane.slope_y.value,\
-                                #   slope_x=Plane.slope_x.value,\
                                   neighbour_flux_ap=neighbour_flux,
                                   target_flux_ap=target_flux,
                                   bkg_flux_ap=bkg_flux,
@@ -756,31 +738,7 @@ def extract_light_curve(fitsFile,outputdir,return_msg=True):
     output = outputdir/output
 
     # Parameters and  Criteria:
-    sigma_clipping = 5 # To be applied after the detrending of the light curve
-
-    # # Structure the data to be saved
-    # results = {'tic':                    None,
-    #            'sector':                 None,
-    #            'ra':                     None,
-    #            'dec':                    None,
-    #            'headers':                None,  # Headers from the original FITS file
-    #            'fit':                    None,  # Result from fit
-    #            'neighbours_all':         None,  # All neighbours stars info
-    #            'neighbours_used':        None,  # Used neighbours stars info
-    #            'target':                 None,  # Target star info
-    #            'aperture_threshold':     None,  # HDU to store tabular information
-    #            'pca_all':                None,  # PCA results
-    #            'pca_used':               None,  # PCA results
-    #            'centroids':              None,  # Centroids results
-    #            'excluded_intervals':     None,  # Excluded intervals in days
-    #            'lc_raw':                 None,  # Light curves
-    #            'lc_raw_nonan':           None,  # Light curves
-    #            'lc_trend':               None,  # Light curves
-    #            'lc_regressed':           None,  # Light curves
-    #            'lc_regressed_notoutlier':None,  # Light curves
-    #            'median_image':           None,  
-    #            'masks':                  None,
-    #            'tag':                    None}  
+    sigma_clipping = 5 # To be applied after the detrending of the light curve # ! Parameter
     
     # Structure the data to be saved
     results = SimpleNamespace()
@@ -938,11 +896,6 @@ def extract_light_curve(fitsFile,outputdir,return_msg=True):
     lc_raw = tpf.to_lightcurve(aperture_mask=ap_mask, method='aperture')
     # Store to results
     results.lc_raw = lc_raw
-    # results['lc_raw'] = lc_raw
-    # Store to results
-    # results['lc_raw'] = {'flux':lc_raw.flux.value,\
-    #                     'time':lc_raw.time.value}
-
 
     # Find the indices of the quality mask that created the light curve
     ind = np.argwhere(tpf.quality_mask == True)
@@ -960,8 +913,6 @@ def extract_light_curve(fitsFile,outputdir,return_msg=True):
     lc = tpf.to_lightcurve(aperture_mask=ap_mask, method='aperture')
     # Store to results
     results.lc_raw_nonan = lc
-    # results['lc_raw_nonan'] = {'flux':lc.flux.value,\
-    #                             'time':lc.time.value}
             
     # Make a design matrix and pass it to a linear regression corrector
     regressors = tpf.flux[:, ap_bkg]
@@ -999,19 +950,6 @@ def extract_light_curve(fitsFile,outputdir,return_msg=True):
                                            dm=dm,
                                            rc=rc,
                                            npc=npc)
-        # results['lc_trend']                = {'flux':lc_trend.flux.value,\
-        #                                     'time':lc_trend.time.value}
-        # results['lc_regressed']            = {'flux':lc_regressed.flux.value,\
-        #                                     'time':lc_regressed.time.value,\
-        #                                     'outlier_mask':lc_mask_regressed_outliers,\
-        #                                     'sigma_clipping':sigma_clipping}
-        # results['lc_regressed_notoutlier'] = {'flux':lc_regressed_no_outliers.flux.value,\
-        #                                     'time':lc_regressed_no_outliers.time.value}
-        # results['pca_used']                = {'coef':rc.coefficients,\
-        #                                       'pc':[dm.values[:,i] for i in range(dm.rank)],\
-        #                                       'dm':dm,\
-        #                                       'rc':rc,\
-        #                                       'npc':npc}
 
         # Save results
         results.tag = 'OK'
