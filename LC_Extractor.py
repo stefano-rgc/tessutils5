@@ -701,7 +701,7 @@ def find_number_of_PCs(results,regressors,lc):
 
     # Store to results
     results.pca_all = SimpleNamespace(coef=rc.coefficients,
-                                      pc=[dm.values[:,i] for i in range(dm.rank)],
+                                      pc=[dm.values[:,i] for i in range(dm.rank)], 
                                       dm=dm,
                                       rc=rc,
                                       npc=npc,
