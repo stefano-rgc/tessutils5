@@ -302,18 +302,9 @@ def mag2flux(mag, zp=20.60654144):
     """
     return np.clip(10**(-0.4*(mag - zp)), 0, None)
 
-def tie_sigma(model):
-    '''Used to constrain the sigma of the Gaussians when performing the fit in `contamination()`'''
-    try:
-        return model.x_stddev
-    except AttributeError:
-        return model.x_stddev_0
-    
-def tie_amplitude(model,factor=1):
-    '''Used to constrain the amplitude of the Gaussians when performing the fit in `contamination()`'''
-    return model.amplitude_0*factor
 
-def contamination(results,image,aperture,target_coord_pixel,target_tmag,nb_coords_pixel,nb_tmags,wcs,median_bkg_flux,prepend_err_msg=''):
+
+def contamination(results,image,aperture,target_coord_pixel,target_tmag,nb_coords_pixel,nb_tmags,wcs,prepend_err_msg=''):
     '''
     Purpose:
         Calculate the fraction of flux in the aperture the mask that comes from
@@ -349,6 +340,17 @@ def contamination(results,image,aperture,target_coord_pixel,target_tmag,nb_coord
     
     nGaussians = len(Gaussians)
     model = np.sum(Gaussians)
+
+    def tie_sigma(model):
+        '''Used to constrain the sigma of the Gaussians when performing the fit in `contamination()`'''
+        try:
+            return model.x_stddev
+        except AttributeError:
+            return model.x_stddev_0
+        
+    def tie_amplitude(model,factor=1):
+        '''Used to constrain the amplitude of the Gaussians when performing the fit in `contamination()`'''
+        return model.amplitude_0*factor
     
     # Set the constrains in the model
     if nGaussians == 1:
@@ -367,8 +369,8 @@ def contamination(results,image,aperture,target_coord_pixel,target_tmag,nb_coord
             getattr(model,f'y_mean_{i}').fixed = True
             # Tie all the Gaussian amplitudes to the one of the target star
             fraction = fluxes[i]/fluxes[0]
-            tmp = functools.partial(tie_amplitude, factor=fraction)
-            getattr(model,f'amplitude_{i}').tied = tmp
+            modified_tie_amplitude = functools.partial(tie_amplitude, factor=fraction)
+            getattr(model,f'amplitude_{i}').tied = modified_tie_amplitude
             # Untie and unfix for the target star
             if i==0:
                 getattr(model,f'amplitude_{i}').min = 0.0
@@ -376,7 +378,8 @@ def contamination(results,image,aperture,target_coord_pixel,target_tmag,nb_coord
                 getattr(model,f'amplitude_{i}').tied = False
                 
     # Add a 2D plane to the model
-    model += Planar2D(slope_x=0, slope_y=0, intercept=median_bkg_flux)
+    median_background_flux = np.median(results.median_image[results.masks.background])
+    model += Planar2D(slope_x=0, slope_y=0, intercept=median_background_flux)
 
     # Make the fit
     (xsize,ysize) = image.shape
@@ -459,7 +462,7 @@ def contamination(results,image,aperture,target_coord_pixel,target_tmag,nb_coord
 
     return fitted_image, err_msg
 
-def refine_aperture(results,tic,ra,dec,wcs,aperture,threshold,image,prepend_err_msg=''):
+def refine_aperture(results,tic,ra,dec,wcs,aperture,image,prepend_err_msg=''):
     '''
     Purpose:
         Find an aperture mask that only contains one source and only
@@ -467,6 +470,7 @@ def refine_aperture(results,tic,ra,dec,wcs,aperture,threshold,image,prepend_err_
     '''
 
     # Parameters / Criteria
+    threshold = results.aperture_threshold
     thresholds = iter([7.5, 10, 15, 20, 30, 40, 50]) # ! Parameter
     arcsec_per_pixel = 21 * u.arcsec # TESS CCD # ! Parameter
     nb_mags_below_target = 4 # ! Parameter
@@ -593,48 +597,49 @@ def exclude_interval(tpf,sector,results): # ! Parameters !
 
     # Initializations
     intervals = []
+    sector = int(sector)
     
-    if int(sector) == 1:
-        intervals = [ (1334.8, 1335.1),
-                      (1347.0, 1349.5) ] # days
+    match sector:
+        case 1:
+            intervals = [ (1334.8, 1335.1),
+                          (1347.0, 1349.5) ] # days
 
-    if int(sector) == 2:
-        intervals = [ (1356.2, 1356.5),
-                      (1361.0, 1361.3),
-                      (1363.5, 1363.8),
-                      (1365.9, 1366.2),
-                      (1373.8, 1374.1),
-                      (1375.8, 1376.0),
-                      (1377.9, 1378.7) ] # days
+        case 2:
+            intervals = [ (1356.2, 1356.5),
+                          (1361.0, 1361.3),
+                          (1363.5, 1363.8),
+                          (1365.9, 1366.2),
+                          (1373.8, 1374.1),
+                          (1375.8, 1376.0),
+                          (1377.9, 1378.7) ] # days
 
-    if int(sector) == 3:
-        intervals = [ (1380.0, 1385.0),
-                      (1387.6, 1387.9),
-                      (1390.1, 1390.4),
-                      (1392.6, 1392.9),
-                      (1395.1, 1395.4),
-                      (1398.6, 1398.9),
-                      (1400.6, 1400.9),
-                      (1402.6, 1402.9),
-                      (1404.6, 1404.9),
-                      (1406.1, 1406.4) ] # days
+        case 3:
+            intervals = [ (1380.0, 1385.0),
+                          (1387.6, 1387.9),
+                          (1390.1, 1390.4),
+                          (1392.6, 1392.9),
+                          (1395.1, 1395.4),
+                          (1398.6, 1398.9),
+                          (1400.6, 1400.9),
+                          (1402.6, 1402.9),
+                          (1404.6, 1404.9),
+                          (1406.1, 1406.4) ] # days
 
-    if int(sector) == 4:
-        intervals = [ (1420.0, 1427.0) ]
+        case 4:
+            intervals = [ (1420.0, 1427.0) ]
 
-    if int(sector) == 5:
-        intervals = [ (1463.0, 1465.0) ] # days
+        case 5:
+            intervals = [ (1463.0, 1465.0) ] # days
 
-    if int(sector) == 6:
-        intervals = [ (1476.0, 1479.0) ] # days
+        case 6:
+            intervals = [ (1476.0, 1479.0) ] # days
 
-    if int(sector) == 7:
-        intervals = [ (1502.5, 1506.0) ] # days
+        case 7:
+            intervals = [ (1502.5, 1506.0) ] # days
 
-    if int(sector) == 8:
-        intervals = [ (1529.5, 1533.0) ] # days
+        case 8:
+            intervals = [ (1529.5, 1533.0) ] # days
 
-    # for interval in intervals:
     for interval in intervals:
         # Find the indices of the quality mask that created tpf.time
         ind = np.argwhere(tpf.quality_mask == True)
@@ -724,23 +729,9 @@ def get_header_info(fitsFile):
     
     return hdulist
 
-
-################################################################
-### Main function to extract light curves from the TESS images
-################################################################
-
-def extract_light_curve(fitsFile,outputdir,return_msg=True):
-
-    # Output name
-    if not outputdir.exists():
-        outputdir.mkdir(parents=True)
-    output = Path(fitsFile.stem+'_corrected.pickled')
-    output = outputdir/output
-
-    # Parameters and  Criteria:
-    sigma_clipping = 5 # To be applied after the detrending of the light curve # ! Parameter
+def create_output_structure():
+    """Dictionary-like object that organize the output of the pipeline"""
     
-    # Structure the data to be saved
     results = SimpleNamespace()
     results.tic = None
     results.sector = None
@@ -764,12 +755,30 @@ def extract_light_curve(fitsFile,outputdir,return_msg=True):
     results.median_image = None
     results.masks = None
     results.tag = None
+    return results
 
+################################################################
+### Main function to extract light curves from the TESS images
+################################################################
+
+def extract_light_curve(fitsFile,outputdir,return_msg=True):
+
+    # Output name
+    if not outputdir.exists():
+        outputdir.mkdir(parents=True)
+    output = Path(fitsFile.stem+'_corrected.pickled')
+    output = outputdir/output
+
+    # Parameters and  Criteria:
+    sigma_clipping = 5 # To be applied after the detrending of the light curve # ! Parameter
+    
+    # Structure the data to be saved
+    results = create_output_structure()
 
     # Save headers from original FITS file
     results.headers = get_header_info(fitsFile)
 
-    # Load the TESS taret pixel file
+    # Load the TESS target pixel file
     try:
         tpf = lk.TessTargetPixelFile(fitsFile)
     except Exception as e:
@@ -784,47 +793,42 @@ def extract_light_curve(fitsFile,outputdir,return_msg=True):
             return err_msg
         return
     
-    tic = tpf.get_keyword('ticid')
-    sector = tpf.get_keyword('sector')
-    target_ra = tpf.ra 
-    target_dec = tpf.dec
+    # tic = tpf.get_keyword('ticid')
+    # sector = tpf.get_keyword('sector')
+    # target_ra = tpf.ra 
+    # target_dec = tpf.dec
     
     # Store to results
-    results.tic = tic
-    results.sector = sector
-    results.ra = target_ra
-    results.dec = target_dec
+    results.tic = tpf.get_keyword('ticid')
+    results.sector = tpf.get_keyword('sector')
+    results.ra = tpf.ra 
+    results.dec = tpf.dec
 
     # Initialize messages
-    id_msg = f'TIC {tic} Sector {sector}: Skipped: '
-    OK_msg = f'TIC {tic} Sector {sector}: OK'
+    id_msg = f'TIC {results.tic} Sector {results.sector}: Skipped: '
+    OK_msg = f'TIC {results.tic} Sector {results.sector}: OK'
     
     # Calculate the median image
+    # (Baed on function `create_threshold_mask` from `lightkurve` package).
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        median_image = np.nanmedian(tpf.flux, axis=0)
-        try:
-            median_image = median_image.value
-        except Exception as e:
-            e_name = e.__class__.__name__
-            print(f'Unexpected exception when computing the median image for the TPF. Exception: -> {e_name}: {e}.')
-        # Store to results
-        results.median_image = median_image
+        results.median_image = np.nanmedian(tpf.flux, axis=0).value
 
     # Estimate of aperture mask and background mask
-    ap_mask_threshold = 5
-    bkg_mask_threshold = 3
-    ap_mask =   threshold_mask(median_image, threshold=ap_mask_threshold, reference_pixel='center')
-    ap_bkg  = ~ threshold_mask(median_image, threshold=bkg_mask_threshold, reference_pixel=None)
+    aperture_mask_threshold = 5 # ! Parameter
+    background_mask_threshold = 3 # ! Parameter
+    aperture_mask = threshold_mask(results.median_image, threshold=aperture_mask_threshold, reference_pixel='center')
+    background_mask = ~ threshold_mask(results.median_image, threshold=background_mask_threshold, reference_pixel=None)
     # Exclude NaN values outside the camera
-    ap_bkg &= ~np.isnan(median_image) 
+    background_mask &= ~np.isnan(results.median_image) 
     # Estimate the median flux background
-    median_bkg_flux = np.median(median_image[ap_bkg])
+    median_background_flux = np.median(results.median_image[background_mask])
     # Store to results
-    results.masks = SimpleNamespace(aperture=ap_mask, background=ap_bkg)
+    results.masks = SimpleNamespace(aperture=aperture_mask,
+                                    background=background_mask)
     
     # Check validity of aperture mask
-    OK_ap_mask, err_msg = check_aperture_mask(ap_mask, id_msg)
+    OK_ap_mask, err_msg = check_aperture_mask(results.masks.aperture, id_msg)
     # If aperture is not good, exit program with corresponding message
     if not OK_ap_mask:
         # Save results
@@ -849,13 +853,13 @@ def extract_light_curve(fitsFile,outputdir,return_msg=True):
             return err_msg
         return
     
-    ap_mask,\
+    results.masks.aperture,\
     target_coord_pixel, target_tmag,\
     nb_coords_pixel, nb_tmags,\
-    err_msg = refine_aperture(results, tic, target_ra, target_dec, WCS,\
-                  ap_mask, ap_mask_threshold, median_image, prepend_err_msg=id_msg)
+    err_msg = refine_aperture(results, results.tic, results.ra, results.dec, WCS,\
+                  results.masks.aperture, results.median_image, prepend_err_msg=id_msg)
     # If not satisfactory aperture mask
-    if ap_mask is None:
+    if results.masks.aperture is None:
         # Save results
         results.tag = err_msg
         with open(output,'wb') as f:
@@ -865,11 +869,9 @@ def extract_light_curve(fitsFile,outputdir,return_msg=True):
         return
 
     # Variation in time of aperture's center of mass
-    centroid_col, centroid_row = tpf.estimate_centroids(aperture_mask=ap_mask, method='quadratic')
-    centroid_col = centroid_col.value
-    centroid_row = centroid_row.value
-    centroid_col -= tpf.column
-    centroid_row -= tpf.row
+    centroid_col, centroid_row = tpf.estimate_centroids(aperture_mask=results.masks.aperture, method='quadratic')
+    centroid_col = centroid_col.value - tpf.column
+    centroid_row = centroid_row.value - tpf.row
     sqrt_col2_row2 = np.sqrt(centroid_col**2+centroid_row**2)
     # Store to results
     results.centroids = SimpleNamespace(col=centroid_col,
@@ -878,11 +880,11 @@ def extract_light_curve(fitsFile,outputdir,return_msg=True):
                                         time=tpf.time.value)
 
     # Fit the image and find the contamination fraction within the aperture mask
-    fitted_image, err_msg = contamination(results, median_image,ap_mask,\
-                                 target_coord_pixel, target_tmag,\
-                                 nb_coords_pixel, nb_tmags,\
-                                 tpf.wcs,median_bkg_flux,
-                                 prepend_err_msg=id_msg)
+    fitted_image, err_msg = contamination(results, results.median_image,results.masks.aperture,\
+                                          results.target.pix, results.target.mag,\
+                                          results.neighbours_used.pix, results.neighbours_used.mag,\
+                                          tpf.wcs,
+                                          prepend_err_msg=id_msg)
     if fitted_image is None:
         # Save results
         results.tag = err_msg
@@ -893,7 +895,7 @@ def extract_light_curve(fitsFile,outputdir,return_msg=True):
         return
 
     # Generate the raw light curve
-    lc_raw = tpf.to_lightcurve(aperture_mask=ap_mask, method='aperture')
+    lc_raw = tpf.to_lightcurve(aperture_mask=results.masks.aperture, method='aperture')
     # Store to results
     results.lc_raw = lc_raw
 
@@ -907,15 +909,15 @@ def extract_light_curve(fitsFile,outputdir,return_msg=True):
     tpf.quality_mask[ind[mask]] = False
 
     # Exclude intervals previously decided
-    exclude_interval(tpf, sector, results)
+    exclude_interval(tpf, results.sector, results)
 
     # Generate the light curve
-    lc = tpf.to_lightcurve(aperture_mask=ap_mask, method='aperture')
+    lc = tpf.to_lightcurve(aperture_mask=results.masks.aperture, method='aperture')
     # Store to results
     results.lc_raw_nonan = lc
             
     # Make a design matrix and pass it to a linear regression corrector
-    regressors = tpf.flux[:, ap_bkg]
+    regressors = tpf.flux[:, background_mask]
 
     # Number of PCs to use
     npc, dm, rc = find_number_of_PCs(results,regressors,lc)
@@ -962,7 +964,7 @@ def extract_light_curve(fitsFile,outputdir,return_msg=True):
     except Exception as e:
         e_name = type(e).__name__
         print('!!!!!!!!!!!!!!!!!!!!!!!!!')
-        print(f'   Sector {sector}.')
+        print(f'   Sector {results.sector}.')
         print(f'Unexpected EXCEPTION -> {e_name}: {e}.')
         print('!!!!!!!!!!!!!!!!!!!!!!!!!')
         if return_msg:
